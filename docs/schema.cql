@@ -100,6 +100,21 @@ CREATE TABLE skeletons {
     PRIMARY KEY (user_id, folder_id)
 }
 
+/*
+    Unfortunately, due to the way they're stored internally in cassandra,
+    when using counter columns you can not have data in the same row that is of
+    a non-counter type that is not part of the primary key. This means that
+    we'll need to query the counter table separately when we pull the
+    skeleton.
+*/
+CREATE TABLE folder_versions {
+    user_id uuid,
+    folder_id uuid,
+
+    version counter,
+
+    PRIMARY KEY (user_id, folder_id)
+}
 
 /*
     Item_parents is an inverted index mapping item ids back to their parent
