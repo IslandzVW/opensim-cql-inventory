@@ -93,6 +93,7 @@ CREATE TABLE skeletons {
     user_id uuid,
     folder_id uuid,
 
+    folder_name varchar,
     parent_id uuid,
     type int,
     level int, //root, toplevel, leaf
