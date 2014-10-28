@@ -1,3 +1,5 @@
 *.suo
 *.cache
 obj/
+bin/
+packages/
