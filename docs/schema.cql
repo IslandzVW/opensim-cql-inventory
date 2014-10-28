@@ -53,11 +53,11 @@
 
 
 /*
-    Folders is the primary/heavy CQL table. It contains the actual data for all
+    FolderContents is the primary/heavy CQL table. It contains the actual data for all
     items stored in all folders for all users. A magic item UUID of 1 is used to
     store the folder metadata
 */
-CREATE TABLE folders (
+CREATE TABLE folder_contents (
     folder_id uuid,
     item_id uuid,
 

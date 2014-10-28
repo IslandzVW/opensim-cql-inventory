@@ -42,19 +42,31 @@ namespace CQLInventoryBackend
         private Cluster _cluster;
         private ISession _session;
 
+        /// <summary>
+        /// The name of the keyspace where we will store all inventory data
+        /// </summary>
         private const string KEYSPACE_NAME = "OpensimInventory";
 
+        /// <summary>
+        /// This magic item ID is used to store the folder data
+        /// </summary>
+        private readonly Guid FOLDER_MAGIC_ENTRY = Guid.Parse("00000000-0000-0000-0000-000000000001");
+
         private readonly PreparedStatement SKEL_SELECT_STMT;
+        private readonly PreparedStatement FOLDER_SELECT_STMT;
 
 
 
         public CQLInventoryStorage(string[] contactPoints)
         {
             _cluster = Cluster.Builder().AddContactPoints(contactPoints).Build();
-            _session = _cluster.Connect();
+            _session = _cluster.Connect(KEYSPACE_NAME);
 
             SKEL_SELECT_STMT = _session.Prepare("SELECT * FROM skeletons WHERE user_id = ?");
             SKEL_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+            FOLDER_SELECT_STMT = _session.Prepare("SELECT * FROM folders WHERE folder_id = ?");
+            FOLDER_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
         }
 
         public List<InventorySkeletonEntry> GetInventorySkeleton(Guid userId)
@@ -81,7 +93,22 @@ namespace CQLInventoryBackend
 
         public InventoryFolder GetFolder(Guid folderId)
         {
-            throw new NotImplementedException();
+            var statement = FOLDER_SELECT_STMT.Bind(folderId);
+            var rowset = _session.Execute(statement);
+
+            var itemList = new List<InventoryItem>();
+            var retFolder = new InventoryFolder();
+            foreach (var row in rowset)
+            {
+
+
+                /*retList.Add(new InventoryItem
+                {
+                    
+                });*/
+            }
+
+            return retFolder;
         }
 
         public InventoryFolder GetFolderAttributes(Guid folderId)

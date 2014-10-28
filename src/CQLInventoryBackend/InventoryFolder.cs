@@ -36,7 +36,15 @@ using System.Threading.Tasks;
 
 namespace CQLInventoryBackend
 {
+    /// <summary>
+    /// Represents a folder contained in a user's inventory
+    /// </summary>
     public class InventoryFolder
     {
+        public Guid FolderId { get; set; }
+        public Guid OwnerId { get; set; }
+        public string Name { get; set; }
+        public int Type { get; set; }
+        public int CreationDate { get; set; }
     }
 }

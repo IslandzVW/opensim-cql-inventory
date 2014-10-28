@@ -36,7 +36,28 @@ using System.Threading.Tasks;
 
 namespace CQLInventoryBackend
 {
+    /// <summary>
+    /// Represents a single item in an inventory folder
+    /// </summary>
     public class InventoryItem
     {
+        public Guid ItemId { get; set; }
+        public Guid FolderId { get; set; }
+        public string Name { get; set; }
+        public Guid AssetId { get; set; }
+        public int BasePermissions { get; set; }
+        public int CreationDate { get; set; }
+        public Guid CreatorId { get; set; }
+        public int CurrentPermissions { get; set; }
+        public string Description { get; set; }
+        public int EveryonePermissions { get; set; }
+        public int Flags { get; set; }
+        public Guid GroupId { get; set; }
+        public bool GroupOwned { get; set; }
+        public int GroupPermissions { get; set; }
+        public int InventoryType { get; set; }
+        public int NextPermissions { get; set; }
+        public Guid OwnerId { get; set; }
+        public int SaleType { get; set; }
     }
 }
