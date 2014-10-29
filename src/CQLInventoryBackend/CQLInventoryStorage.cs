@@ -86,6 +86,7 @@ namespace CQLInventoryBackend
                                     "VALUES (?, ?, ?, ?, ?, ?);");
             FOLDER_ATTRIB_INSERT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
+
             FOLDER_ITEM_INSERT_STMT
                 = _session.Prepare( "INSERT INTO folder_contents (folder_id, item_id, name, asset_id, asset_type, " +
                                         "base_permissions, creation_date, creator_id, current_permissions, description, " +
@@ -141,11 +142,28 @@ namespace CQLInventoryBackend
                 {
                     itemList.Add(new InventoryItem
                     {
-                        
+                        AssetId = row.GetValue<Guid>("asset_id"),
+                        BasePermissions = row.GetValue<int>("base_permissions"),
+                        CreationDate = row.GetValue<int>("creation_date"),
+                        CreatorId = row.GetValue<Guid>("creator_id"),
+                        CurrentPermissions = row.GetValue<int>("current_permissions"),
+                        Description = row.GetValue<string>("description"),
+                        EveryonePermissions = row.GetValue<int>("everyone_permissions"),
+                        Flags = row.GetValue<int>("flags"),
+                        FolderId = row.GetValue<Guid>("folder_id"),
+                        GroupId = row.GetValue<Guid>("group_id"),
+                        GroupOwned = row.GetValue<bool>("group_owned"),
+                        GroupPermissions = row.GetValue<int>("group_permissions"),
+                        InventoryType = row.GetValue<int>("inv_type"),
+                        ItemId = row.GetValue<Guid>("item_id"),
+                        NextPermissions = row.GetValue<int>("next_permissions"),
+                        OwnerId = row.GetValue<Guid>("owner_id"),
+                        SaleType = row.GetValue<int>("sale_type")
                     });
                 }
             }
 
+            retFolder.Items = itemList;
             return retFolder;
         }
 
