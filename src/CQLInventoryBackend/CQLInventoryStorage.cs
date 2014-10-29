@@ -53,7 +53,11 @@ namespace CQLInventoryBackend
         private readonly Guid FOLDER_MAGIC_ENTRY = Guid.Parse("00000000-0000-0000-0000-000000000001");
 
         private readonly PreparedStatement SKEL_SELECT_STMT;
+        private readonly PreparedStatement SKEL_INSERT_STMT;
+
         private readonly PreparedStatement FOLDER_SELECT_STMT;
+        private readonly PreparedStatement FOLDER_ATTRIB_INSERT_STMT;
+        private readonly PreparedStatement FOLDER_ITEM_INSERT_STMT;
 
 
 
@@ -62,11 +66,36 @@ namespace CQLInventoryBackend
             _cluster = Cluster.Builder().AddContactPoints(contactPoints).Build();
             _session = _cluster.Connect(KEYSPACE_NAME);
 
-            SKEL_SELECT_STMT = _session.Prepare("SELECT * FROM skeletons WHERE user_id = ?");
+            
+            SKEL_SELECT_STMT = _session.Prepare("SELECT * FROM skeletons WHERE user_id = ?;");
             SKEL_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
-            FOLDER_SELECT_STMT = _session.Prepare("SELECT * FROM folders WHERE folder_id = ?");
+            
+            SKEL_INSERT_STMT 
+                = _session.Prepare( "INSERT INTO skeletons (user_id, folder_id, folder_name, parent_id, type, level) " +
+                                    "VALUES(?, ?, ?, ?, ?, ?);");
+            SKEL_INSERT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+            
+            FOLDER_SELECT_STMT = _session.Prepare("SELECT * FROM folder_contents WHERE folder_id = ?;");
             FOLDER_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            FOLDER_ATTRIB_INSERT_STMT
+                = _session.Prepare( "INSERT INTO folder_contents (folder_id, item_id, name, inv_type, creation_date, owner_id) " +
+                                    "VALUES (?, ?, ?, ?, ?, ?);");
+            FOLDER_ATTRIB_INSERT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+            FOLDER_ITEM_INSERT_STMT
+                = _session.Prepare( "INSERT INTO folder_contents (folder_id, item_id, name, asset_id, asset_type, " +
+                                        "base_permissions, creation_date, creator_id, current_permissions, description, " +
+                                        "everyone_permissions, flags, group_id, group_owned, group_permissions, " +
+                                        "inv_type, next_permissions, owner_id, sale_type) " +
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+            FOLDER_ITEM_INSERT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+
         }
 
         public List<InventorySkeletonEntry> GetInventorySkeleton(Guid userId)
@@ -97,15 +126,24 @@ namespace CQLInventoryBackend
             var rowset = _session.Execute(statement);
 
             var itemList = new List<InventoryItem>();
-            var retFolder = new InventoryFolder();
+            var retFolder = new InventoryFolder { FolderId = folderId };
             foreach (var row in rowset)
             {
-
-
-                /*retList.Add(new InventoryItem
+                if (row.GetValue<Guid>("item_id") == FOLDER_MAGIC_ENTRY)
                 {
-                    
-                });*/
+                    //this is the data row that holds the information for the folder itself
+                    retFolder.CreationDate = row.GetValue<int>("creation_date");
+                    retFolder.Name = row.GetValue<string>("name");
+                    retFolder.OwnerId = row.GetValue<Guid>("owner_id");
+                    retFolder.Type = row.GetValue<int>("inv_type");
+                }
+                else
+                {
+                    itemList.Add(new InventoryItem
+                    {
+                        
+                    });
+                }
             }
 
             return retFolder;

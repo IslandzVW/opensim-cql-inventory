@@ -46,5 +46,7 @@ namespace CQLInventoryBackend
         public string Name { get; set; }
         public int Type { get; set; }
         public int CreationDate { get; set; }
+
+        public List<InventoryItem> Items { get; set; }
     }
 }
