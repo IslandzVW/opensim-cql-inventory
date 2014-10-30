@@ -18,5 +18,6 @@ namespace CQLInventoryBackend
         public Guid ParentId { get; set; }
         public int Type { get; set; }
         public FolderLevel Level { get; set; }
+        public long Version { get; set; }
     }
 }

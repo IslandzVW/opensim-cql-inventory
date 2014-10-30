@@ -56,12 +56,12 @@ namespace CQLInventoryBackend
 
         private readonly PreparedStatement SKEL_SELECT_STMT;
         private readonly PreparedStatement SKEL_INSERT_STMT;
-
         private readonly PreparedStatement FOLDER_SELECT_STMT;
         private readonly PreparedStatement FOLDER_ATTRIB_SELECT_STMT;
         private readonly PreparedStatement FOLDER_ATTRIB_INSERT_STMT;
         private readonly PreparedStatement FOLDER_ITEM_INSERT_STMT;
-
+        private readonly PreparedStatement FOLDER_VERSION_INC_STMT;
+        private readonly PreparedStatement FOLDER_VERSION_SELECT_STMT;
 
 
         public CQLInventoryStorage(string[] contactPoints)
@@ -104,7 +104,13 @@ namespace CQLInventoryBackend
             FOLDER_ITEM_INSERT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
 
+            FOLDER_VERSION_INC_STMT
+                = _session.Prepare("UPDATE folder_versions SET version = version + 1 WHERE user_id = ? AND folder_id = ?;");
+            FOLDER_VERSION_INC_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
+
+            FOLDER_VERSION_SELECT_STMT = _session.Prepare("SELECT * FROM folder_versions WHERE user_id = ?;");
+            FOLDER_VERSION_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
         }
 
         /// <summary>
@@ -116,11 +122,19 @@ namespace CQLInventoryBackend
             var session = cluster.Connect();
 
             session.CreateKeyspaceIfNotExists(KEYSPACE_NAME, new Dictionary<string, string> { { "class", "SimpleStrategy" }, { "replication_factor", "3" } });
+            session.ChangeKeyspace(KEYSPACE_NAME);
+
             string[] statements = ProcessSchemaFile();
 
             foreach (var statement in statements)
             {
-                session.Execute(new SimpleStatement(statement));
+                var stmt = statement.Trim().TrimEnd('\r', '\n');
+
+                if (stmt != "")
+                {
+                    Console.Out.WriteLine("running: " + stmt);
+                    session.Execute(new SimpleStatement(stmt));
+                }
             }
         }
 
@@ -132,11 +146,30 @@ namespace CQLInventoryBackend
         private static string[] ProcessSchemaFile()
         {
             string contents = File.ReadAllText("schema.cql");
+            StringBuilder withoutComments = new StringBuilder();
 
-            var blockComments = @"/\*(.*?)\*/";
-            contents = Regex.Replace(contents, blockComments, "");
+            //filter comments
+            bool skipping = false;
+            for (int i = 0; i < contents.Length; i++)
+            {
+                if (contents[i] == '/' && contents[i + 1] == '*')
+                {
+                    skipping = true;
+                }
+                else if (contents[i] == '*' && contents[i+1] == '/')
+                {
+                    i += 2;
+                    skipping = false;
+                    continue;
+                }
 
-            return contents.Split(';');
+                if (! skipping)
+                {
+                    withoutComments.Append(contents[i]);
+                }
+            }
+
+            return withoutComments.ToString().Split(';');
         }
 
         public static int UnixTimeNow()
@@ -149,21 +182,35 @@ namespace CQLInventoryBackend
             var statement = SKEL_SELECT_STMT.Bind(userId);
             var rowset = _session.Execute(statement);
 
-            var retList = new List<InventorySkeletonEntry>();
+            var retList = new Dictionary<Guid, InventorySkeletonEntry>();
             foreach (var row in rowset)
             {
-                retList.Add(new InventorySkeletonEntry
+                retList.Add(row.GetValue<Guid>("folder_id"), new InventorySkeletonEntry
                 {
                     UserId = row.GetValue<Guid>("user_id"),
                     FolderId = row.GetValue<Guid>("folder_id"),
                     Name = row.GetValue<string>("folder_name"),
                     ParentId = row.GetValue<Guid>("parent_id"),
-                    Type = row.GetValue<byte>("type"),
+                    Type = (byte)row.GetValue<int>("type"),
                     Level = (FolderLevel)row.GetValue<int>("level")
                 });
             }
 
-            return retList;
+            //look up the versions
+            statement = FOLDER_VERSION_SELECT_STMT.Bind(userId);
+            rowset = _session.Execute(statement);
+
+            foreach (var row in rowset)
+            {
+                var folderId = row.GetValue<Guid>("folder_id");
+
+                if (retList.ContainsKey(folderId))
+                {
+                    retList[folderId].Version = row.GetValue<long>("version");
+                }
+            }
+
+            return new List<InventorySkeletonEntry>(retList.Values);
         }
 
         public InventoryFolder GetFolder(Guid folderId)
@@ -238,7 +285,7 @@ namespace CQLInventoryBackend
 
         public void CreateFolder(InventoryFolder folder)
         {
-            var skelInsert = SKEL_INSERT_STMT.Bind(folder.OwnerId, folder.FolderId, folder.Name, folder.ParentId, folder.Type, folder.Level);
+            var skelInsert = SKEL_INSERT_STMT.Bind(folder.OwnerId, folder.FolderId, folder.Name, folder.ParentId, folder.Type, (int)folder.Level);
             var contentInsert = FOLDER_ATTRIB_INSERT_STMT.Bind(folder.FolderId, FOLDER_MAGIC_ENTRY, folder.Name, folder.Type, UnixTimeNow(), folder.OwnerId);
 
             var batch = new BatchStatement()
@@ -246,6 +293,9 @@ namespace CQLInventoryBackend
                 .Add(contentInsert);
 
             _session.Execute(batch);
+
+            var versionInc = FOLDER_VERSION_INC_STMT.Bind(folder.OwnerId, folder.FolderId);
+            _session.Execute(versionInc);
         }
 
         public void SaveFolder(InventoryFolder folder)
