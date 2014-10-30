@@ -57,7 +57,7 @@
     items stored in all folders for all users. A magic item UUID of 1 is used to
     store the folder metadata
 */
-CREATE TABLE folder_contents (
+CREATE TABLE IF NOT EXISTS folder_contents (
     folder_id uuid,
     item_id uuid,
 
@@ -89,7 +89,7 @@ CREATE TABLE folder_contents (
     as well as provide the simulator useful information about default folders
     for when the user takes an item
 */
-CREATE TABLE skeletons {
+CREATE TABLE IF NOT EXISTS skeletons (
     user_id uuid,
     folder_id uuid,
 
@@ -99,7 +99,7 @@ CREATE TABLE skeletons {
     level int, //root, toplevel, leaf
 
     PRIMARY KEY (user_id, folder_id)
-}
+);
 
 /*
     Unfortunately, due to the way they're stored internally in cassandra,
@@ -108,21 +108,21 @@ CREATE TABLE skeletons {
     we'll need to query the counter table separately when we pull the
     skeleton.
 */
-CREATE TABLE folder_versions {
+CREATE TABLE IF NOT EXISTS folder_versions (
     user_id uuid,
     folder_id uuid,
 
     version counter,
 
     PRIMARY KEY (user_id, folder_id)
-}
+);
 
 /*
     Item_parents is an inverted index mapping item ids back to their parent
     folder. This is required because the viewer will send item ids for us to
     rez without the parent folder ID set.
 */
-CREATE TABLE item_parents {
+CREATE TABLE IF NOT EXISTS item_parents (
     item_id uuid PRIMARY KEY,
     parent_folder_id uuid
-}
+);

@@ -34,10 +34,12 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Cassandra;
+using System.IO;
+using System.Text.RegularExpressions;
 
 namespace CQLInventoryBackend
 {
-    class CQLInventoryStorage : IInventoryStorage
+    class CQLInventoryStorage : IInventoryStorage, IDisposable
     {
         private Cluster _cluster;
         private ISession _session;
@@ -56,6 +58,7 @@ namespace CQLInventoryBackend
         private readonly PreparedStatement SKEL_INSERT_STMT;
 
         private readonly PreparedStatement FOLDER_SELECT_STMT;
+        private readonly PreparedStatement FOLDER_ATTRIB_SELECT_STMT;
         private readonly PreparedStatement FOLDER_ATTRIB_INSERT_STMT;
         private readonly PreparedStatement FOLDER_ITEM_INSERT_STMT;
 
@@ -81,6 +84,11 @@ namespace CQLInventoryBackend
             FOLDER_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
 
+            FOLDER_ATTRIB_SELECT_STMT = _session.Prepare(   "SELECT * FROM folder_contents WHERE folder_id = ? AND item_id = " 
+                                                            + FOLDER_MAGIC_ENTRY.ToString() + ";");
+            FOLDER_ATTRIB_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
             FOLDER_ATTRIB_INSERT_STMT
                 = _session.Prepare( "INSERT INTO folder_contents (folder_id, item_id, name, inv_type, creation_date, owner_id) " +
                                     "VALUES (?, ?, ?, ?, ?, ?);");
@@ -99,6 +107,43 @@ namespace CQLInventoryBackend
 
         }
 
+        /// <summary>
+        /// Creates the keyspace and tables
+        /// </summary>
+        public static void CreateKeySpaceAndTables(string[] contactPoints)
+        {
+            var cluster = Cluster.Builder().AddContactPoints(contactPoints).Build();
+            var session = cluster.Connect();
+
+            session.CreateKeyspaceIfNotExists(KEYSPACE_NAME, new Dictionary<string, string> { { "class", "SimpleStrategy" }, { "replication_factor", "3" } });
+            string[] statements = ProcessSchemaFile();
+
+            foreach (var statement in statements)
+            {
+                session.Execute(new SimpleStatement(statement));
+            }
+        }
+
+        /// <summary>
+        /// Loads the schema file from disk and removes comments then splits into statements
+        /// by looking for semi colons
+        /// </summary>
+        /// <returns></returns>
+        private static string[] ProcessSchemaFile()
+        {
+            string contents = File.ReadAllText("schema.cql");
+
+            var blockComments = @"/\*(.*?)\*/";
+            contents = Regex.Replace(contents, blockComments, "");
+
+            return contents.Split(';');
+        }
+
+        public static int UnixTimeNow()
+        {
+            return (int)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds;
+        }
+
         public List<InventorySkeletonEntry> GetInventorySkeleton(Guid userId)
         {
             var statement = SKEL_SELECT_STMT.Bind(userId);
@@ -114,7 +159,7 @@ namespace CQLInventoryBackend
                     Name = row.GetValue<string>("folder_name"),
                     ParentId = row.GetValue<Guid>("parent_id"),
                     Type = row.GetValue<byte>("type"),
-                    FolderLevel = (InventorySkeletonEntry.Level)row.GetValue<int>("level")
+                    Level = (FolderLevel)row.GetValue<int>("level")
                 });
             }
 
@@ -125,18 +170,16 @@ namespace CQLInventoryBackend
         {
             var statement = FOLDER_SELECT_STMT.Bind(folderId);
             var rowset = _session.Execute(statement);
-
+            
             var itemList = new List<InventoryItem>();
-            var retFolder = new InventoryFolder { FolderId = folderId };
+            InventoryFolder retFolder = null;
             foreach (var row in rowset)
             {
                 if (row.GetValue<Guid>("item_id") == FOLDER_MAGIC_ENTRY)
                 {
+                    retFolder = new InventoryFolder { FolderId = folderId };
                     //this is the data row that holds the information for the folder itself
-                    retFolder.CreationDate = row.GetValue<int>("creation_date");
-                    retFolder.Name = row.GetValue<string>("name");
-                    retFolder.OwnerId = row.GetValue<Guid>("owner_id");
-                    retFolder.Type = row.GetValue<int>("inv_type");
+                    MapRowToFolder(retFolder, row);
                 }
                 else
                 {
@@ -167,14 +210,42 @@ namespace CQLInventoryBackend
             return retFolder;
         }
 
+        private static void MapRowToFolder(InventoryFolder retFolder, Row row)
+        {
+            retFolder.CreationDate = row.GetValue<int>("creation_date");
+            retFolder.Name = row.GetValue<string>("name");
+            retFolder.OwnerId = row.GetValue<Guid>("owner_id");
+            retFolder.Type = row.GetValue<int>("inv_type");
+        }
+
         public InventoryFolder GetFolderAttributes(Guid folderId)
         {
-            throw new NotImplementedException();
+            var statement = FOLDER_SELECT_STMT.Bind(folderId);
+            var rowset = _session.Execute(statement);
+
+            InventoryFolder retFolder = null;
+
+            foreach (var row in rowset)
+            {
+                retFolder = new InventoryFolder { FolderId = folderId };
+                //should only be a single row
+                MapRowToFolder(retFolder, row);
+                break;
+            }
+
+            return retFolder;
         }
 
         public void CreateFolder(InventoryFolder folder)
         {
-            throw new NotImplementedException();
+            var skelInsert = SKEL_INSERT_STMT.Bind(folder.OwnerId, folder.FolderId, folder.Name, folder.ParentId, folder.Type, folder.Level);
+            var contentInsert = FOLDER_ATTRIB_INSERT_STMT.Bind(folder.FolderId, FOLDER_MAGIC_ENTRY, folder.Name, folder.Type, UnixTimeNow(), folder.OwnerId);
+
+            var batch = new BatchStatement()
+                .Add(skelInsert)
+                .Add(contentInsert);
+
+            _session.Execute(batch);
         }
 
         public void SaveFolder(InventoryFolder folder)
@@ -240,6 +311,12 @@ namespace CQLInventoryBackend
         public void PurgeItems(IEnumerable<InventoryItem> items)
         {
             throw new NotImplementedException();
+        }
+    
+        public void Dispose()
+        {
+            _session.Dispose();
+            _cluster.Dispose();
         }
     }
 }
