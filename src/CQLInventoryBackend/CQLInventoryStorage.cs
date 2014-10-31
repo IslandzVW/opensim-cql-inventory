@@ -55,6 +55,7 @@ namespace CQLInventoryBackend
         private readonly Guid FOLDER_MAGIC_ENTRY = Guid.Parse("00000000-0000-0000-0000-000000000001");
 
         private readonly PreparedStatement SKEL_SELECT_STMT;
+        private readonly PreparedStatement SKEL_SINGLE_SELECT_STMT;
         private readonly PreparedStatement SKEL_INSERT_STMT;
         private readonly PreparedStatement FOLDER_SELECT_STMT;
         private readonly PreparedStatement FOLDER_ATTRIB_SELECT_STMT;
@@ -62,6 +63,10 @@ namespace CQLInventoryBackend
         private readonly PreparedStatement FOLDER_ITEM_INSERT_STMT;
         private readonly PreparedStatement FOLDER_VERSION_INC_STMT;
         private readonly PreparedStatement FOLDER_VERSION_SELECT_STMT;
+        private readonly PreparedStatement FOLDER_VERSION_SINGLE_SELECT_STMT;
+        private readonly PreparedStatement FOLDER_UPDATE_STMT;
+        private readonly PreparedStatement SKEL_UPDATE_STMT;
+        private readonly PreparedStatement SKEL_MOVE_STMT;
 
 
         public CQLInventoryStorage(string[] contactPoints)
@@ -72,6 +77,10 @@ namespace CQLInventoryBackend
             
             SKEL_SELECT_STMT = _session.Prepare("SELECT * FROM skeletons WHERE user_id = ?;");
             SKEL_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            SKEL_SINGLE_SELECT_STMT = _session.Prepare("SELECT * FROM skeletons WHERE user_id = ? AND folder_id = ?;");
+            SKEL_SINGLE_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
             
             SKEL_INSERT_STMT 
@@ -111,6 +120,23 @@ namespace CQLInventoryBackend
 
             FOLDER_VERSION_SELECT_STMT = _session.Prepare("SELECT * FROM folder_versions WHERE user_id = ?;");
             FOLDER_VERSION_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            FOLDER_VERSION_SINGLE_SELECT_STMT = _session.Prepare("SELECT * FROM folder_versions WHERE user_id = ? AND folder_id = ?;");
+            FOLDER_VERSION_SINGLE_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            FOLDER_UPDATE_STMT = _session.Prepare(  "UPDATE folder_contents SET name = ?, inv_type = ? " +
+                                                    "WHERE folder_id = ? AND item_id = " + FOLDER_MAGIC_ENTRY.ToString());
+            FOLDER_UPDATE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            SKEL_UPDATE_STMT = _session.Prepare("UPDATE skeletons SET folder_name = ?, type = ? WHERE user_id = ? AND folder_id = ?");
+            SKEL_UPDATE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            SKEL_MOVE_STMT = _session.Prepare("UPDATE skeletons SET parent_id = ? WHERE user_id = ? AND folder_id = ?");
+            SKEL_MOVE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
         }
 
         /// <summary>
@@ -185,15 +211,7 @@ namespace CQLInventoryBackend
             var retList = new Dictionary<Guid, InventorySkeletonEntry>();
             foreach (var row in rowset)
             {
-                retList.Add(row.GetValue<Guid>("folder_id"), new InventorySkeletonEntry
-                {
-                    UserId = row.GetValue<Guid>("user_id"),
-                    FolderId = row.GetValue<Guid>("folder_id"),
-                    Name = row.GetValue<string>("folder_name"),
-                    ParentId = row.GetValue<Guid>("parent_id"),
-                    Type = (byte)row.GetValue<int>("type"),
-                    Level = (FolderLevel)row.GetValue<int>("level")
-                });
+                retList.Add(row.GetValue<Guid>("folder_id"), MapRowToSkeletonItem(row));
             }
 
             //look up the versions
@@ -213,6 +231,48 @@ namespace CQLInventoryBackend
             return new List<InventorySkeletonEntry>(retList.Values);
         }
 
+        private static InventorySkeletonEntry MapRowToSkeletonItem(Row row)
+        {
+            return new InventorySkeletonEntry
+            {
+                UserId = row.GetValue<Guid>("user_id"),
+                FolderId = row.GetValue<Guid>("folder_id"),
+                Name = row.GetValue<string>("folder_name"),
+                ParentId = row.GetValue<Guid>("parent_id"),
+                Type = (byte)row.GetValue<int>("type"),
+                Level = (FolderLevel)row.GetValue<int>("level")
+            };
+        }
+
+        public InventorySkeletonEntry GetInventorySkeletonEntry(Guid userId, Guid folderId)
+        {
+            var statement = SKEL_SINGLE_SELECT_STMT.Bind(userId, folderId);
+            var rowset = _session.Execute(statement);
+
+            InventorySkeletonEntry entry = null;
+            foreach (var row in rowset)
+            {
+                //should only be one
+                entry = MapRowToSkeletonItem(row);
+                break;
+            }
+
+            if (entry != null)
+            {
+                //look up the version
+                statement = FOLDER_VERSION_SINGLE_SELECT_STMT.Bind(userId, folderId);
+                rowset = _session.Execute(statement);
+
+                foreach (var row in rowset)
+                {
+                    //should only be one 
+                    entry.Version = row.GetValue<long>("version");
+                }
+            }
+
+            return entry;
+        }
+
         public InventoryFolder GetFolder(Guid folderId)
         {
             var statement = FOLDER_SELECT_STMT.Bind(folderId);
@@ -230,31 +290,38 @@ namespace CQLInventoryBackend
                 }
                 else
                 {
-                    itemList.Add(new InventoryItem
-                    {
-                        AssetId = row.GetValue<Guid>("asset_id"),
-                        BasePermissions = row.GetValue<int>("base_permissions"),
-                        CreationDate = row.GetValue<int>("creation_date"),
-                        CreatorId = row.GetValue<Guid>("creator_id"),
-                        CurrentPermissions = row.GetValue<int>("current_permissions"),
-                        Description = row.GetValue<string>("description"),
-                        EveryonePermissions = row.GetValue<int>("everyone_permissions"),
-                        Flags = row.GetValue<int>("flags"),
-                        FolderId = row.GetValue<Guid>("folder_id"),
-                        GroupId = row.GetValue<Guid>("group_id"),
-                        GroupOwned = row.GetValue<bool>("group_owned"),
-                        GroupPermissions = row.GetValue<int>("group_permissions"),
-                        InventoryType = row.GetValue<int>("inv_type"),
-                        ItemId = row.GetValue<Guid>("item_id"),
-                        NextPermissions = row.GetValue<int>("next_permissions"),
-                        OwnerId = row.GetValue<Guid>("owner_id"),
-                        SaleType = row.GetValue<int>("sale_type")
-                    });
+                    itemList.Add(MapRowToItem(row));
                 }
             }
 
             retFolder.Items = itemList;
             return retFolder;
+        }
+
+        private static InventoryItem MapRowToItem(Row row)
+        {
+            return new InventoryItem
+            {
+                AssetId = row.GetValue<Guid>("asset_id"),
+                AssetType = row.GetValue<int>("asset_type"),
+                BasePermissions = row.GetValue<int>("base_permissions"),
+                CreationDate = row.GetValue<int>("creation_date"),
+                CreatorId = row.GetValue<Guid>("creator_id"),
+                CurrentPermissions = row.GetValue<int>("current_permissions"),
+                Description = row.GetValue<string>("description"),
+                EveryonePermissions = row.GetValue<int>("everyone_permissions"),
+                Flags = row.GetValue<int>("flags"),
+                FolderId = row.GetValue<Guid>("folder_id"),
+                GroupId = row.GetValue<Guid>("group_id"),
+                GroupOwned = row.GetValue<bool>("group_owned"),
+                GroupPermissions = row.GetValue<int>("group_permissions"),
+                InventoryType = row.GetValue<int>("inv_type"),
+                ItemId = row.GetValue<Guid>("item_id"),
+                Name = row.GetValue<string>("name"),
+                NextPermissions = row.GetValue<int>("next_permissions"),
+                OwnerId = row.GetValue<Guid>("owner_id"),
+                SaleType = row.GetValue<int>("sale_type")
+            };
         }
 
         private static void MapRowToFolder(InventoryFolder retFolder, Row row)
@@ -294,33 +361,60 @@ namespace CQLInventoryBackend
 
             _session.Execute(batch);
 
-            var versionInc = FOLDER_VERSION_INC_STMT.Bind(folder.OwnerId, folder.FolderId);
+            VersionInc(folder.OwnerId, folder.FolderId);
+        }
+
+        private void VersionInc(Guid ownerId, Guid folderId)
+        {
+            var versionInc = FOLDER_VERSION_INC_STMT.Bind(ownerId, folderId);
             _session.Execute(versionInc);
         }
 
         public void SaveFolder(InventoryFolder folder)
         {
-            throw new NotImplementedException();
+            var skelUpdate = SKEL_UPDATE_STMT.Bind(folder.Name, folder.Type, folder.OwnerId, folder.FolderId);
+            var contentUpdate = FOLDER_UPDATE_STMT.Bind(folder.Name, folder.Type, folder.FolderId);
+
+            var batch = new BatchStatement()
+                .Add(skelUpdate)
+                .Add(contentUpdate);
+
+            _session.Execute(batch);
+
+            VersionInc(folder.OwnerId, folder.FolderId);
         }
 
-        public void MoveFolder(InventoryFolder folder, Guid parentId)
+        public void MoveFolder(InventorySkeletonEntry folder, Guid newParent)
         {
-            throw new NotImplementedException();
+            var skelMove = SKEL_MOVE_STMT.Bind(newParent, folder.UserId, folder.FolderId);
+            _session.Execute(skelMove);
+
+            VersionInc(folder.UserId, folder.FolderId);
+            VersionInc(folder.UserId, folder.ParentId);
+            VersionInc(folder.UserId, newParent);
         }
 
-        public Guid SendFolderToTrash(InventoryFolder folder, Guid trashFolderHint)
+        public InventorySkeletonEntry FindFolderForType(Guid owner, byte assetType)
         {
-            throw new NotImplementedException();
-        }
+            //get the skel, search for the type
+            var skel = this.GetInventorySkeleton(owner);
+            foreach (var entry in skel)
+            {
+                if (entry.Level == FolderLevel.TopLevel || entry.Level == FolderLevel.Root)
+                {
+                    if (entry.Type == assetType)
+                    {
+                        return entry;
+                    }
+                }
+            }
 
-        public InventoryFolder FindFolderForType(Guid owner, byte assetType)
-        {
-            throw new NotImplementedException();
+            return null;
         }
 
         public void PurgeFolderContents(InventoryFolder folder)
         {
-            throw new NotImplementedException();
+
         }
 
         public void PurgeFolder(InventoryFolder folder)
@@ -340,7 +434,14 @@ namespace CQLInventoryBackend
 
         public void CreateItem(InventoryItem item)
         {
-            throw new NotImplementedException();
+            var statement = FOLDER_ITEM_INSERT_STMT.Bind(item.FolderId, item.ItemId, item.Name, item.AssetId, item.AssetType,
+                item.BasePermissions, item.CreationDate, item.CreatorId, item.CurrentPermissions, item.Description, item.EveryonePermissions,
+                item.Flags, item.GroupId, item.GroupOwned, item.GroupPermissions, item.InventoryType, item.NextPermissions, 
+                item.OwnerId, item.SaleType);
+
+            _session.Execute(statement);
+
+            VersionInc(item.OwnerId, item.FolderId);
         }
 
         public void SaveItem(InventoryItem item)

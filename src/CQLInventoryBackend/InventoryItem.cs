@@ -45,6 +45,7 @@ namespace CQLInventoryBackend
         public Guid FolderId { get; set; }
         public string Name { get; set; }
         public Guid AssetId { get; set; }
+        public int AssetType { get; set; }
         public int BasePermissions { get; set; }
         public int CreationDate { get; set; }
         public Guid CreatorId { get; set; }

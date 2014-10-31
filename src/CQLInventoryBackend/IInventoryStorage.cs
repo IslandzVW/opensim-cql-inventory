@@ -47,6 +47,12 @@ namespace CQLInventoryBackend
         List<InventorySkeletonEntry> GetInventorySkeleton(Guid userId);
 
         /// <summary>
+        /// Returns a single entry from the inventory skeleton folder index
+        /// </summary>
+        /// <returns>The matching skeleton entry</returns>
+        InventorySkeletonEntry GetInventorySkeletonEntry(Guid userId, Guid folderId);
+
+        /// <summary>
         /// Returns a full copy of the requested folder including items and sub folder ids
         /// </summary>
         /// <param name="folderId">The ID of the folder to retrieve</param>
@@ -77,23 +83,15 @@ namespace CQLInventoryBackend
         /// Moves the specified folder to the new parent
         /// </summary>
         /// <param name="folder">The folder to move</param>
-        /// <param name="parentId">The destination folder to move the folder into</param>
-        void MoveFolder(InventoryFolder folder, Guid parentId);
-
-        /// <summary>
-        /// Moves a folder and its subitems into the trash folder
-        /// </summary>
-        /// <param name="folder">The folder to remove</param>
-        /// <param name="trashFolderHint">The Guid of the trash folder if known, or a Zero Guid</param>
-        /// <returns>The Guid of the trash folder for caching</returns>
-        Guid SendFolderToTrash(InventoryFolder folder, Guid trashFolderHint);
+        /// <param name="oldParent">The ID of the new parent folder</param>
+        void MoveFolder(InventorySkeletonEntry folder, Guid newParent);
 
         /// <summary>
         /// Finds the best root folder to hold the given type
         /// </summary>
         /// <param name="type"></param>
         /// <returns>The best folder to put an object</returns>
-        InventoryFolder FindFolderForType(Guid owner, byte assetType);
+        InventorySkeletonEntry FindFolderForType(Guid owner, byte assetType);
 
         /// <summary>
         /// Purges all subfolders and items from the specified folder
