@@ -61,6 +61,7 @@ namespace CQLInventoryBackend
         private readonly PreparedStatement FOLDER_ATTRIB_SELECT_STMT;
         private readonly PreparedStatement FOLDER_ATTRIB_INSERT_STMT;
         private readonly PreparedStatement FOLDER_ITEM_INSERT_STMT;
+        private readonly PreparedStatement FOLDER_ITEM_UPDATE_STMT;
         private readonly PreparedStatement FOLDER_VERSION_INC_STMT;
         private readonly PreparedStatement FOLDER_VERSION_SELECT_STMT;
         private readonly PreparedStatement FOLDER_VERSION_SINGLE_SELECT_STMT;
@@ -111,6 +112,15 @@ namespace CQLInventoryBackend
                                         "inv_type, next_permissions, owner_id, sale_type) " +
                                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
             FOLDER_ITEM_INSERT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            FOLDER_ITEM_UPDATE_STMT
+                = _session.Prepare("UPDATE folder_contents SET name = ?, asset_id = ?, asset_type = ?, " +
+                                        "base_permissions = ?, creation_date = ?, creator_id = ?, current_permissions= ?, description = ?, " +
+                                        "everyone_permissions = ?, flags = ?, group_id = ?, group_owned = ?, group_permissions = ?, " +
+                                        "inv_type = ?, next_permissions = ?, sale_type = ? " +
+                                    "WHERE folder_id = ? AND item_id = ?;");
+            FOLDER_ITEM_UPDATE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
 
             FOLDER_VERSION_INC_STMT
@@ -446,7 +456,12 @@ namespace CQLInventoryBackend
 
         public void SaveItem(InventoryItem item)
         {
-            throw new NotImplementedException();
+            var statement = FOLDER_ITEM_UPDATE_STMT.Bind(item.Name, item.AssetId, item.AssetType, item.BasePermissions, item.CreationDate, item.CreatorId,
+                item.CurrentPermissions, item.Description, item.EveryonePermissions, item.Flags, item.GroupId, item.GroupOwned, item.GroupPermissions,
+                item.InventoryType, item.NextPermissions, item.SaleType, item.FolderId, item.ItemId);
+
+            _session.Execute(statement);
+            VersionInc(item.OwnerId, item.FolderId);
         }
 
         public void MoveItem(InventoryItem item, InventoryFolder parentFolder)

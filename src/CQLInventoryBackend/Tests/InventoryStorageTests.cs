@@ -257,5 +257,97 @@ namespace CQLInventoryBackend.Tests
             Assert.AreEqual(item.OwnerId, folder.Items[0].OwnerId);
             Assert.AreEqual(item.SaleType, folder.Items[0].SaleType);
         }
+
+        [Test]
+        public void TestSaveItem()
+        {
+            InventoryFolder folder = new InventoryFolder
+            {
+                FolderId = Guid.NewGuid(),
+                Level = FolderLevel.Root,
+                Name = "Test",
+                OwnerId = Guid.NewGuid(),
+                ParentId = Guid.Empty,
+                Type = 2
+            };
+
+            _storage.CreateFolder(folder);
+
+            InventoryItem item = new InventoryItem
+            {
+                AssetId = Guid.NewGuid(),
+                AssetType = 11,
+                BasePermissions = 3,
+                CreationDate = 4,
+                CreatorId = Guid.NewGuid(),
+                CurrentPermissions = 5,
+                Description = "Description",
+                EveryonePermissions = 6,
+                Flags = 7,
+                FolderId = folder.FolderId,
+                GroupId = Guid.NewGuid(),
+                GroupOwned = true,
+                GroupPermissions = 8,
+                InventoryType = 9,
+                ItemId = Guid.NewGuid(),
+                Name = "Name",
+                NextPermissions = int.MaxValue,
+                OwnerId = folder.OwnerId,
+                SaleType = 10
+            };
+
+            _storage.CreateItem(item);
+
+            item = new InventoryItem
+            {
+                AssetId = Guid.NewGuid(),
+                AssetType = 12,
+                BasePermissions = 4,
+                CreationDate = 5,
+                CreatorId = Guid.NewGuid(),
+                CurrentPermissions = 6,
+                Description = "Description1",
+                EveryonePermissions = 7,
+                Flags = 8,
+                FolderId = folder.FolderId,
+                GroupId = Guid.NewGuid(),
+                GroupOwned = false,
+                GroupPermissions = 9,
+                InventoryType = 10,
+                ItemId = item.ItemId,
+                Name = "Name1",
+                NextPermissions = int.MinValue,
+                OwnerId = folder.OwnerId,
+                SaleType = 11
+            };
+
+            _storage.SaveItem(item);
+
+            folder = _storage.GetFolder(folder.FolderId);
+            var skelEntry = _storage.GetInventorySkeletonEntry(folder.OwnerId, folder.FolderId);
+
+            Assert.AreEqual(3, skelEntry.Version);
+            Assert.AreEqual(1, folder.Items.Count);
+
+            Assert.AreEqual(item.AssetId, folder.Items[0].AssetId);
+            Assert.AreEqual(item.AssetType, folder.Items[0].AssetType);
+            Assert.AreEqual(item.BasePermissions, folder.Items[0].BasePermissions);
+            Assert.AreEqual(item.CreationDate, folder.Items[0].CreationDate);
+            Assert.AreEqual(item.CreatorId, folder.Items[0].CreatorId);
+            Assert.AreEqual(item.CurrentPermissions, folder.Items[0].CurrentPermissions);
+            Assert.AreEqual(item.Description, folder.Items[0].Description);
+            Assert.AreEqual(item.EveryonePermissions, folder.Items[0].EveryonePermissions);
+            Assert.AreEqual(item.Flags, folder.Items[0].Flags);
+            Assert.AreEqual(item.FolderId, folder.Items[0].FolderId);
+            Assert.AreEqual(item.GroupId, folder.Items[0].GroupId);
+            Assert.AreEqual(item.GroupOwned, folder.Items[0].GroupOwned);
+            Assert.AreEqual(item.GroupPermissions, folder.Items[0].GroupPermissions);
+            Assert.AreEqual(item.InventoryType, folder.Items[0].InventoryType);
+            Assert.AreEqual(item.ItemId, folder.Items[0].ItemId);
+            Assert.AreEqual(item.Name, folder.Items[0].Name);
+            Assert.AreEqual(item.NextPermissions, folder.Items[0].NextPermissions);
+            Assert.AreEqual(item.OwnerId, folder.Items[0].OwnerId);
+            Assert.AreEqual(item.SaleType, folder.Items[0].SaleType);
+        }
     }
 }
