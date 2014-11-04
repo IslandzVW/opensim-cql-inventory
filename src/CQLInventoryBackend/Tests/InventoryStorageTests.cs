@@ -237,25 +237,34 @@ namespace CQLInventoryBackend.Tests
             Assert.AreEqual(2, skelEntry.Version);
             Assert.AreEqual(1, folder.Items.Count);
 
-            Assert.AreEqual(item.AssetId, folder.Items[0].AssetId);
-            Assert.AreEqual(item.AssetType, folder.Items[0].AssetType);
-            Assert.AreEqual(item.BasePermissions, folder.Items[0].BasePermissions);
-            Assert.AreEqual(item.CreationDate, folder.Items[0].CreationDate);
-            Assert.AreEqual(item.CreatorId, folder.Items[0].CreatorId);
-            Assert.AreEqual(item.CurrentPermissions, folder.Items[0].CurrentPermissions);
-            Assert.AreEqual(item.Description, folder.Items[0].Description);
-            Assert.AreEqual(item.EveryonePermissions, folder.Items[0].EveryonePermissions);
-            Assert.AreEqual(item.Flags, folder.Items[0].Flags);
-            Assert.AreEqual(item.FolderId, folder.Items[0].FolderId);
-            Assert.AreEqual(item.GroupId, folder.Items[0].GroupId);
-            Assert.AreEqual(item.GroupOwned, folder.Items[0].GroupOwned);
-            Assert.AreEqual(item.GroupPermissions, folder.Items[0].GroupPermissions);
-            Assert.AreEqual(item.InventoryType, folder.Items[0].InventoryType);
-            Assert.AreEqual(item.ItemId, folder.Items[0].ItemId);
-            Assert.AreEqual(item.Name, folder.Items[0].Name);
-            Assert.AreEqual(item.NextPermissions, folder.Items[0].NextPermissions);
-            Assert.AreEqual(item.OwnerId, folder.Items[0].OwnerId);
-            Assert.AreEqual(item.SaleType, folder.Items[0].SaleType);
+            AssertItemEqual(item, folder.Items[0]);
+
+            var foundItem = _storage.GetItem(item.ItemId, Guid.Empty);
+
+            AssertItemEqual(item, foundItem);
+        }
+
+        private void AssertItemEqual(InventoryItem a, InventoryItem b)
+        {
+            Assert.AreEqual(a.AssetId, b.AssetId);
+            Assert.AreEqual(a.AssetType, b.AssetType);
+            Assert.AreEqual(a.BasePermissions, b.BasePermissions);
+            Assert.AreEqual(a.CreationDate, b.CreationDate);
+            Assert.AreEqual(a.CreatorId, b.CreatorId);
+            Assert.AreEqual(a.CurrentPermissions, b.CurrentPermissions);
+            Assert.AreEqual(a.Description, b.Description);
+            Assert.AreEqual(a.EveryonePermissions, b.EveryonePermissions);
+            Assert.AreEqual(a.Flags, b.Flags);
+            Assert.AreEqual(a.FolderId, b.FolderId);
+            Assert.AreEqual(a.GroupId, b.GroupId);
+            Assert.AreEqual(a.GroupOwned, b.GroupOwned);
+            Assert.AreEqual(a.GroupPermissions, b.GroupPermissions);
+            Assert.AreEqual(a.InventoryType, b.InventoryType);
+            Assert.AreEqual(a.ItemId, b.ItemId);
+            Assert.AreEqual(a.Name, b.Name);
+            Assert.AreEqual(a.NextPermissions, b.NextPermissions);
+            Assert.AreEqual(a.OwnerId, b.OwnerId);
+            Assert.AreEqual(a.SaleType, b.SaleType);
         }
 
         [Test]
@@ -329,25 +338,237 @@ namespace CQLInventoryBackend.Tests
             Assert.AreEqual(3, skelEntry.Version);
             Assert.AreEqual(1, folder.Items.Count);
 
-            Assert.AreEqual(item.AssetId, folder.Items[0].AssetId);
-            Assert.AreEqual(item.AssetType, folder.Items[0].AssetType);
-            Assert.AreEqual(item.BasePermissions, folder.Items[0].BasePermissions);
-            Assert.AreEqual(item.CreationDate, folder.Items[0].CreationDate);
-            Assert.AreEqual(item.CreatorId, folder.Items[0].CreatorId);
-            Assert.AreEqual(item.CurrentPermissions, folder.Items[0].CurrentPermissions);
-            Assert.AreEqual(item.Description, folder.Items[0].Description);
-            Assert.AreEqual(item.EveryonePermissions, folder.Items[0].EveryonePermissions);
-            Assert.AreEqual(item.Flags, folder.Items[0].Flags);
-            Assert.AreEqual(item.FolderId, folder.Items[0].FolderId);
-            Assert.AreEqual(item.GroupId, folder.Items[0].GroupId);
-            Assert.AreEqual(item.GroupOwned, folder.Items[0].GroupOwned);
-            Assert.AreEqual(item.GroupPermissions, folder.Items[0].GroupPermissions);
-            Assert.AreEqual(item.InventoryType, folder.Items[0].InventoryType);
-            Assert.AreEqual(item.ItemId, folder.Items[0].ItemId);
-            Assert.AreEqual(item.Name, folder.Items[0].Name);
-            Assert.AreEqual(item.NextPermissions, folder.Items[0].NextPermissions);
-            Assert.AreEqual(item.OwnerId, folder.Items[0].OwnerId);
-            Assert.AreEqual(item.SaleType, folder.Items[0].SaleType);
+            AssertItemEqual(item, folder.Items[0]);
+        }
+
+        [Test]
+        public void TestMoveItem()
+        {
+            InventoryFolder folder = new InventoryFolder
+            {
+                FolderId = Guid.NewGuid(),
+                Level = FolderLevel.Root,
+                Name = "Test",
+                OwnerId = Guid.NewGuid(),
+                ParentId = Guid.Empty,
+                Type = 2
+            };
+
+            InventoryFolder folder1 = new InventoryFolder
+            {
+                FolderId = Guid.NewGuid(),
+                Level = FolderLevel.Root,
+                Name = "Test1",
+                OwnerId = folder.OwnerId,
+                ParentId = Guid.Empty,
+                Type = 2
+            };
+
+            _storage.CreateFolder(folder);
+            _storage.CreateFolder(folder1);
+
+            InventoryItem item = new InventoryItem
+            {
+                AssetId = Guid.NewGuid(),
+                AssetType = 11,
+                BasePermissions = 3,
+                CreationDate = 4,
+                CreatorId = Guid.NewGuid(),
+                CurrentPermissions = 5,
+                Description = "Description",
+                EveryonePermissions = 6,
+                Flags = 7,
+                FolderId = folder.FolderId,
+                GroupId = Guid.NewGuid(),
+                GroupOwned = true,
+                GroupPermissions = 8,
+                InventoryType = 9,
+                ItemId = Guid.NewGuid(),
+                Name = "Name",
+                NextPermissions = int.MaxValue,
+                OwnerId = folder.OwnerId,
+                SaleType = 10
+            };
+
+            _storage.CreateItem(item);
+            _storage.MoveItem(item, folder1);
+            item.FolderId = folder1.FolderId;
+
+            folder1 = _storage.GetFolder(folder1.FolderId);
+            var skelEntry = _storage.GetInventorySkeletonEntry(folder1.OwnerId, folder1.FolderId);
+
+            Assert.AreEqual(2, skelEntry.Version);
+            Assert.AreEqual(1, folder1.Items.Count);
+
+            AssertItemEqual(item, folder1.Items[0]);
+
+            folder = _storage.GetFolder(folder.FolderId);
+            skelEntry = _storage.GetInventorySkeletonEntry(folder.OwnerId, folder.FolderId);
+
+            Assert.AreEqual(3, skelEntry.Version);
+            Assert.AreEqual(0, folder.Items.Count);
+
+            var foundItem = _storage.GetItem(item.ItemId, Guid.Empty);
+
+            AssertItemEqual(item, foundItem);
+        }
+
+        [Test]
+        public void TestPurgeItem()
+        {
+            InventoryFolder folder = new InventoryFolder
+            {
+                FolderId = Guid.NewGuid(),
+                Level = FolderLevel.Root,
+                Name = "Test",
+                OwnerId = Guid.NewGuid(),
+                ParentId = Guid.Empty,
+                Type = 2
+            };
+            _storage.CreateFolder(folder);
+
+            InventoryItem item = new InventoryItem
+            {
+                AssetId = Guid.NewGuid(),
+                AssetType = 11,
+                BasePermissions = 3,
+                CreationDate = 4,
+                CreatorId = Guid.NewGuid(),
+                CurrentPermissions = 5,
+                Description = "Description",
+                EveryonePermissions = 6,
+                Flags = 7,
+                FolderId = folder.FolderId,
+                GroupId = Guid.NewGuid(),
+                GroupOwned = true,
+                GroupPermissions = 8,
+                InventoryType = 9,
+                ItemId = Guid.NewGuid(),
+                Name = "Name",
+                NextPermissions = int.MaxValue,
+                OwnerId = folder.OwnerId,
+                SaleType = 10
+            };
+
+            _storage.CreateItem(item);
+            _storage.PurgeItem(item);
+
+            folder = _storage.GetFolder(folder.FolderId);
+            var skelEntry = _storage.GetInventorySkeletonEntry(folder.OwnerId, folder.FolderId);
+
+            Assert.AreEqual(3, skelEntry.Version);
+            Assert.AreEqual(0, folder.Items.Count);
+
+            var foundItem = _storage.GetItem(item.ItemId, Guid.Empty);
+            Assert.Null(foundItem);
+        }
+
+        [Test]
+        public void TestPurgeEmptyFolder()
+        {
+            InventoryFolder folder = new InventoryFolder
+            {
+                FolderId = Guid.NewGuid(),
+                Level = FolderLevel.Root,
+                Name = "Test",
+                OwnerId = Guid.NewGuid(),
+                ParentId = Guid.Empty,
+                Type = 2
+            };
+            
+            _storage.CreateFolder(folder);
+            _storage.PurgeFolder(folder);
+
+            var newfolder = _storage.GetFolder(folder.FolderId);
+            var skelEntry = _storage.GetInventorySkeletonEntry(folder.OwnerId, folder.FolderId);
+
+            Assert.Null(newfolder);
+            Assert.Null(skelEntry);
+        }
+
+        [Test]
+        public void TestPurgeNonemptyFolderContents()
+        {
+            var ownerId = Guid.NewGuid();
+
+            InventoryFolder parent = new InventoryFolder
+            {
+                FolderId = Guid.NewGuid(),
+                Level = FolderLevel.Root,
+                Name = "Test",
+                OwnerId = ownerId,
+                ParentId = Guid.Empty,
+                Type = 2
+            };
+
+            InventoryFolder child = new InventoryFolder
+            {
+                FolderId = Guid.NewGuid(),
+                Level = FolderLevel.TopLevel,
+                Name = "Test",
+                OwnerId = ownerId,
+                ParentId = parent.FolderId,
+                Type = 2
+            };
+
+            _storage.CreateFolder(parent);
+            _storage.CreateFolder(child);
+
+            InventoryItem item = new InventoryItem
+            {
+                AssetId = Guid.NewGuid(),
+                AssetType = 11,
+                BasePermissions = 3,
+                CreationDate = 4,
+                CreatorId = Guid.NewGuid(),
+                CurrentPermissions = 5,
+                Description = "Description",
+                EveryonePermissions = 6,
+                Flags = 7,
+                FolderId = child.FolderId,
+                GroupId = Guid.NewGuid(),
+                GroupOwned = true,
+                GroupPermissions = 8,
+                InventoryType = 9,
+                ItemId = Guid.NewGuid(),
+                Name = "Name",
+                NextPermissions = int.MaxValue,
+                OwnerId = ownerId,
+                SaleType = 10
+            };
+
+            InventoryItem item2 = new InventoryItem
+            {
+                AssetId = Guid.NewGuid(),
+                AssetType = 11,
+                BasePermissions = 3,
+                CreationDate = 4,
+                CreatorId = Guid.NewGuid(),
+                CurrentPermissions = 5,
+                Description = "Description",
+                EveryonePermissions = 6,
+                Flags = 7,
+                FolderId = parent.FolderId,
+                GroupId = Guid.NewGuid(),
+                GroupOwned = true,
+                GroupPermissions = 8,
+                InventoryType = 9,
+                ItemId = Guid.NewGuid(),
+                Name = "Name",
+                NextPermissions = int.MaxValue,
+                OwnerId = ownerId,
+                SaleType = 10
+            };
+
+            _storage.CreateItem(item);
+            _storage.CreateItem(item2);
+
+            _storage.PurgeFolderContents(parent);
+
+            Assert.Null(_storage.GetFolder(child.FolderId));
+            Assert.Null(_storage.GetInventorySkeletonEntry(parent.OwnerId, child.FolderId));
+            Assert.Null(_storage.GetItem(item.ItemId, Guid.Empty));
+            Assert.Null(_storage.GetItem(item2.ItemId, Guid.Empty));
         }
     }
 }

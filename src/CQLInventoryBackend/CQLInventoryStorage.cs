@@ -57,17 +57,30 @@ namespace CQLInventoryBackend
         private readonly PreparedStatement SKEL_SELECT_STMT;
         private readonly PreparedStatement SKEL_SINGLE_SELECT_STMT;
         private readonly PreparedStatement SKEL_INSERT_STMT;
+        private readonly PreparedStatement SKEL_UPDATE_STMT;
+        private readonly PreparedStatement SKEL_MOVE_STMT;
+        private readonly PreparedStatement SKEL_REMOVE_STMT;
+
         private readonly PreparedStatement FOLDER_SELECT_STMT;
+        private readonly PreparedStatement FOLDER_UPDATE_STMT;
         private readonly PreparedStatement FOLDER_ATTRIB_SELECT_STMT;
         private readonly PreparedStatement FOLDER_ATTRIB_INSERT_STMT;
+        private readonly PreparedStatement FOLDER_REMOVE_STMT;
+
         private readonly PreparedStatement FOLDER_ITEM_INSERT_STMT;
         private readonly PreparedStatement FOLDER_ITEM_UPDATE_STMT;
+        private readonly PreparedStatement FOLDER_ITEM_REMOVE_STMT;
+        private readonly PreparedStatement FOLDER_ITEM_SELECT_STMT;
+        
         private readonly PreparedStatement FOLDER_VERSION_INC_STMT;
         private readonly PreparedStatement FOLDER_VERSION_SELECT_STMT;
         private readonly PreparedStatement FOLDER_VERSION_SINGLE_SELECT_STMT;
-        private readonly PreparedStatement FOLDER_UPDATE_STMT;
-        private readonly PreparedStatement SKEL_UPDATE_STMT;
-        private readonly PreparedStatement SKEL_MOVE_STMT;
+        private readonly PreparedStatement FOLDER_VERSION_REMOVE_STMT;
+
+        private readonly PreparedStatement ITEM_OWNERSHIP_INSERT;
+        private readonly PreparedStatement ITEM_OWNERSHIP_UPDATE;
+        private readonly PreparedStatement ITEM_OWNERSHIP_REMOVE;
+        private readonly PreparedStatement ITEM_OWNERSHIP_SELECT;
 
 
         public CQLInventoryStorage(string[] contactPoints)
@@ -123,6 +136,10 @@ namespace CQLInventoryBackend
             FOLDER_ITEM_UPDATE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
 
+            FOLDER_ITEM_REMOVE_STMT = _session.Prepare("DELETE FROM folder_contents WHERE folder_id = ? AND item_id = ?;");
+            FOLDER_ITEM_REMOVE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
             FOLDER_VERSION_INC_STMT
                 = _session.Prepare("UPDATE folder_versions SET version = version + 1 WHERE user_id = ? AND folder_id = ?;");
             FOLDER_VERSION_INC_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
@@ -141,12 +158,44 @@ namespace CQLInventoryBackend
             FOLDER_UPDATE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
 
-            SKEL_UPDATE_STMT = _session.Prepare("UPDATE skeletons SET folder_name = ?, type = ? WHERE user_id = ? AND folder_id = ?");
+            SKEL_UPDATE_STMT = _session.Prepare("UPDATE skeletons SET folder_name = ?, type = ? WHERE user_id = ? AND folder_id = ?;");
             SKEL_UPDATE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
 
 
-            SKEL_MOVE_STMT = _session.Prepare("UPDATE skeletons SET parent_id = ? WHERE user_id = ? AND folder_id = ?");
+            SKEL_MOVE_STMT = _session.Prepare("UPDATE skeletons SET parent_id = ? WHERE user_id = ? AND folder_id = ?;");
             SKEL_MOVE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            ITEM_OWNERSHIP_INSERT = _session.Prepare("INSERT INTO item_parents(item_id, parent_folder_id) VALUES(?, ?);");
+            ITEM_OWNERSHIP_INSERT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            ITEM_OWNERSHIP_UPDATE = _session.Prepare("UPDATE item_parents SET parent_folder_id = ? WHERE item_id = ?;");
+            ITEM_OWNERSHIP_UPDATE.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            ITEM_OWNERSHIP_REMOVE = _session.Prepare("DELETE FROM item_parents WHERE item_id = ?;");
+            ITEM_OWNERSHIP_REMOVE.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            ITEM_OWNERSHIP_SELECT = _session.Prepare("SELECT * FROM item_parents WHERE item_id = ?;");
+            ITEM_OWNERSHIP_SELECT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            FOLDER_ITEM_SELECT_STMT = _session.Prepare("SELECT * FROM folder_contents WHERE folder_id = ? AND item_id = ?;");
+            FOLDER_ITEM_SELECT_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            FOLDER_REMOVE_STMT = _session.Prepare("DELETE FROM folder_contents WHERE folder_id = ?;");
+            FOLDER_REMOVE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            SKEL_REMOVE_STMT = _session.Prepare("DELETE FROM skeletons WHERE user_id = ? AND folder_id = ?;");
+            SKEL_REMOVE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
+
+
+            FOLDER_VERSION_REMOVE_STMT = _session.Prepare("DELETE FROM folder_versions WHERE user_id = ? AND folder_id = ?;");
+            FOLDER_VERSION_REMOVE_STMT.SetConsistencyLevel(ConsistencyLevel.Quorum);
         }
 
         /// <summary>
@@ -304,7 +353,11 @@ namespace CQLInventoryBackend
                 }
             }
 
-            retFolder.Items = itemList;
+            if (retFolder != null)
+            {
+                retFolder.Items = itemList;
+            }
+
             return retFolder;
         }
 
@@ -424,32 +477,120 @@ namespace CQLInventoryBackend
 
         public void PurgeFolderContents(InventoryFolder folder)
         {
+            //build a graph from the inventory skeleton
+            var skel = this.GetInventorySkeleton(folder.OwnerId);
+            var graph = new SkeletonGraphNode(skel);
 
+            var thisNode = graph.AllChildren[folder.FolderId];
+
+            //to purge the contents of a folder, we need to collect all 
+            //the items and subfolders currently inside of it and delete everything
+            //recursively
+
+            Tuple<List<InventoryItem>, List<Guid>> itemsAndFolders = new Tuple<List<InventoryItem>, List<Guid>>(new List<InventoryItem>(), new List<Guid>());
+            RecursiveCollectFolderContents(thisNode, itemsAndFolders);
+
+            //remove all the items
+            foreach (var item in itemsAndFolders.Item1)
+            {
+                this.PurgeItem(item);
+            }
+
+            //remove the folders
+            foreach (var folderid in itemsAndFolders.Item2)
+            {
+                if (folderid != folder.FolderId)
+                {
+                    this.DeleteFolder(folder.OwnerId, folderid);
+                }
+            }
+
+            VersionInc(folder.OwnerId, folder.FolderId);
+        }
+
+        private void RecursiveCollectFolderContents(SkeletonGraphNode node, Tuple<List<InventoryItem>, List<Guid>> itemsAndFolders)
+        {
+            //add folder id
+            itemsAndFolders.Item2.Add(node.Self.FolderId);
+
+            //add items
+            var folder = this.GetFolder(node.Self.FolderId);
+            itemsAndFolders.Item1.AddRange(folder.Items);
+
+            //subfolders
+            foreach (var subfolder in node.DirectChildren)
+            {
+                this.RecursiveCollectFolderContents(subfolder, itemsAndFolders);
+            }
         }
 
         public void PurgeFolder(InventoryFolder folder)
         {
-            throw new NotImplementedException();
+            this.PurgeFolderContents(folder);
+            this.DeleteFolder(folder.OwnerId, folder.FolderId);
         }
 
-        public void PurgeFolders(IEnumerable<InventoryFolder> folders)
+        private void DeleteFolder(Guid ownerId, Guid folderId)
         {
-            throw new NotImplementedException();
+            var folderRemove = FOLDER_REMOVE_STMT.Bind(folderId);
+            var skelRemove = SKEL_REMOVE_STMT.Bind(ownerId, folderId);
+            var versionRemove = FOLDER_VERSION_REMOVE_STMT.Bind(ownerId, folderId);
+
+            var batch = new BatchStatement()
+                .Add(folderRemove)
+                .Add(skelRemove);
+
+            _session.Execute(batch);
+            _session.Execute(versionRemove);
         }
 
         public InventoryItem GetItem(Guid itemId, Guid parentFolderHint)
         {
-            throw new NotImplementedException();
+            if (parentFolderHint == Guid.Empty)
+            {
+                var findParent = ITEM_OWNERSHIP_SELECT.Bind(itemId);
+                var rowset = _session.Execute(findParent);
+
+                foreach (var row in rowset)
+                {
+                    //there should only be one
+                    parentFolderHint = row.GetValue<Guid>("parent_folder_id");
+                    break;
+                }
+            }
+
+            if (parentFolderHint == Guid.Empty)
+            {
+                //we couldnt find the parent folder
+                return null;
+            }
+
+            var findItem = FOLDER_ITEM_SELECT_STMT.Bind(parentFolderHint, itemId);
+            var itemRowset = _session.Execute(findItem);
+
+            foreach (var row in itemRowset)
+            {
+                //there should only be one
+                return MapRowToItem(row);
+            }
+
+            return null;
         }
 
         public void CreateItem(InventoryItem item)
         {
-            var statement = FOLDER_ITEM_INSERT_STMT.Bind(item.FolderId, item.ItemId, item.Name, item.AssetId, item.AssetType,
+            var folderInsert = FOLDER_ITEM_INSERT_STMT.Bind(item.FolderId, item.ItemId, item.Name, item.AssetId, item.AssetType,
                 item.BasePermissions, item.CreationDate, item.CreatorId, item.CurrentPermissions, item.Description, item.EveryonePermissions,
                 item.Flags, item.GroupId, item.GroupOwned, item.GroupPermissions, item.InventoryType, item.NextPermissions, 
                 item.OwnerId, item.SaleType);
 
-            _session.Execute(statement);
+            var itemOwnership = ITEM_OWNERSHIP_INSERT.Bind(item.ItemId, item.FolderId);
+
+            var batch = new BatchStatement()
+                .Add(folderInsert)
+                .Add(itemOwnership);
+
+            _session.Execute(batch);
 
             VersionInc(item.OwnerId, item.FolderId);
         }
@@ -466,17 +607,38 @@ namespace CQLInventoryBackend
 
         public void MoveItem(InventoryItem item, InventoryFolder parentFolder)
         {
-            throw new NotImplementedException();
+            var insert = FOLDER_ITEM_INSERT_STMT.Bind(parentFolder.FolderId, item.ItemId, item.Name, item.AssetId, item.AssetType,
+                item.BasePermissions, item.CreationDate, item.CreatorId, item.CurrentPermissions, item.Description, item.EveryonePermissions,
+                item.Flags, item.GroupId, item.GroupOwned, item.GroupPermissions, item.InventoryType, item.NextPermissions,
+                item.OwnerId, item.SaleType);
+
+            var removeOld = FOLDER_ITEM_REMOVE_STMT.Bind(item.FolderId, item.ItemId);
+
+            var ownershipUpdate = ITEM_OWNERSHIP_UPDATE.Bind(parentFolder.FolderId, item.ItemId);
+
+            var batch = new BatchStatement()
+                .Add(insert)
+                .Add(ownershipUpdate)
+                .Add(removeOld);
+
+            _session.Execute(batch);
+
+            VersionInc(item.OwnerId, item.FolderId);
+            VersionInc(item.OwnerId, parentFolder.FolderId);
         }
 
         public void PurgeItem(InventoryItem item)
         {
-            throw new NotImplementedException();
-        }
+            var removeItem = FOLDER_ITEM_REMOVE_STMT.Bind(item.FolderId, item.ItemId);
+            var removeOwnership = ITEM_OWNERSHIP_REMOVE.Bind(item.ItemId);
 
-        public void PurgeItems(IEnumerable<InventoryItem> items)
-        {
-            throw new NotImplementedException();
+            var batch = new BatchStatement()
+                .Add(removeItem)
+                .Add(removeOwnership);
+
+            _session.Execute(batch);
+
+            VersionInc(item.OwnerId, item.FolderId);
         }
     
         public void Dispose()

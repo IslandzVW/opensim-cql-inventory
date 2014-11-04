@@ -67,6 +67,7 @@
     <Compile Include="InventoryItem.cs" />
     <Compile Include="InventorySkeletonEntry.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="SkeletonGraphNode.cs" />
     <Compile Include="Tests\InventoryStorageTests.cs" />
   </ItemGroup>
   <ItemGroup>

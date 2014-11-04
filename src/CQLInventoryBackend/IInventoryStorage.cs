@@ -106,12 +106,6 @@ namespace CQLInventoryBackend
         void PurgeFolder(InventoryFolder folder);
 
         /// <summary>
-        /// Purges all subfolders and items from the specified folders and then removes the folders
-        /// </summary>
-        /// <param name="folder">The folder to purge</param>
-        void PurgeFolders(IEnumerable<InventoryFolder> folders);
-
-        /// <summary>
         /// Returns an item fetched by the given id
         /// </summary>
         /// <param name="itemId">The item id</param>
@@ -143,11 +137,5 @@ namespace CQLInventoryBackend
         /// </summary>
         /// <param name="item">The item to purge</param>
         void PurgeItem(InventoryItem item);
-
-        /// <summary>
-        /// Purges multiple items from the inventory
-        /// </summary>
-        /// <param name="item">The item to purge</param>
-        void PurgeItems(IEnumerable<InventoryItem> items);
     }
 }
